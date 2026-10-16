@@ -9,7 +9,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
 
-// Impala / TChouse-X connector. All product-invariant knowledge (driver, port model,
+// Impala-compatible connector. All product-invariant knowledge (driver, port model,
 // url template, timestamp dialect) is encapsulated here; no external config needed.
 public class ImpalaConnector implements DbConnector {
 
@@ -35,7 +35,7 @@ public class ImpalaConnector implements DbConnector {
         return EXTRA_PORT_NAMES;
     }
 
-    // Impala/TChouse-X specific timestamp nanosecond rendering (was Session.handleTimestampColumn).
+    // Impala-compatible timestamp nanosecond rendering (was Session.handleTimestampColumn).
     @Override
     public String renderColumn(ResultSet rs, ResultSetMetaData md, int i) throws SQLException {
         int colType = md.getColumnType(i);

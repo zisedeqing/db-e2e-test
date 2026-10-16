@@ -1,3 +1,32 @@
+# db-e2e-test
+
+`db-e2e-test` 是一个基于 Java 和 JDBC 的 SQL 端到端并发测试框架。核心执行引擎与数据库产品无关，通过可插拔 connector 适配不同数据库；默认内置 `ImpalaConnector`。
+
+## 0. 构建与模块
+
+项目是独立的 Maven 多模块工程：
+
+- `connector`：`Endpoint`、`DbConnector` SPI、`ConnectorFactory`、通用 JDBC connector 与内置 Impala connector；
+- `core`：脚本解析、hook、并发 session、结果 diff、CLI 与可执行 fat jar。
+
+构建：
+
+```shell
+mvn clean package
+```
+
+可执行产物：
+
+```text
+core/target/db-e2e-test-1.0-jar-with-dependencies.jar
+```
+
+查看命令行帮助：
+
+```shell
+java -jar core/target/db-e2e-test-1.0-jar-with-dependencies.jar -h
+```
+
 ## 1. directory
 运行时依赖5个目录，其中每个目录的文件名都是以测试脚本名字为前缀。
 ### 1.1 sql
@@ -191,11 +220,11 @@ result hook主要是为了处理sql执行结果中不确定的字符，比如sho
 +----------------------------------------------------------+------+-----------+
 | Path                                                     | Size | Partition |
 +----------------------------------------------------------+------+-----------+
-| hdfs://127.0.0.1/usr/cdw42/test/ds_1_1_646db710/0_0.parq | 584B |           |
-| hdfs://127.0.0.1/usr/cdw42/test/ds_2_2_646db714/0_0.parq | 584B |           |
+| hdfs://127.0.0.1/usr/example/test/ds_1_1_646db710/0_0.parq | 584B |           |
+| hdfs://127.0.0.1/usr/example/test/ds_2_2_646db714/0_0.parq | 584B |           |
 +----------------------------------------------------------+------+-----------+
 ```
-这里的127.0.0.1/usr/cdw42 以及DataSegment的名字都是不确定的，每个人运行都可能会不一样。
+这里的127.0.0.1/usr/example 以及DataSegment的名字都是不确定的，每个人运行都可能会不一样。
 这样可以定义一个正则表达式，把这些不确定的字符替换为固定字符，这样就不会影响结果对比了。
 比如对于DataSegment的命名可以定义如下的hook来处理:
 ```text
@@ -316,7 +345,7 @@ java -jar concurrency-test-1.0-jar-with-dependencies.jar \
 ```
 
 ### 4.1 内置 ImpalaConnector
-默认零配置即为 Impala / TChouse-X 模式，driver、端口模型(hs2/webserver/http)、JDBC URL 模板、
+默认零配置即为 Impala 兼容模式，driver、端口模型(hs2/webserver/http)、JDBC URL 模板、
 TIMESTAMP 微秒渲染等方言行为都内聚在 `framework.connection.ImpalaConnector` 中。
 
 ### 4.2 接入新的数据库产品
@@ -327,7 +356,15 @@ connector.url=jdbc:postgresql://{host}:{port}/{db}{options}
 # connector.extraPortNames 可选，逗号分隔
 ```
 URL 模板支持占位符: `{host}` `{port}` `{db}` `{options}`。
-注意需要把对应产品的 JDBC 驱动加入 classpath。
+
+非内置产品需要把对应 JDBC 驱动加入 classpath。由于 `java -jar` 会忽略额外的 `-cp`，请改用主类方式启动：
+
+```shell
+java -cp "core/target/db-e2e-test-1.0-jar-with-dependencies.jar:/path/to/product-jdbc-driver.jar" \
+    ConcurrencyTests -i host:port -d /path/to/test-workspace -c /path/to/connector.properties
+```
+
+Windows 下 classpath 分隔符使用分号 `;`。也可以在构建时把产品 JDBC 驱动声明为 runtime 依赖，重新生成包含该驱动的 fat jar。
 
 **方式二：自定义 DbConnector 实现** —— 实现 `framework.connection.DbConnector` 接口，
 把产品不变知识(driver、extraPortNames、URL 模板、列渲染方言)固化为类内常量，然后配置:

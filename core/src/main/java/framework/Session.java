@@ -46,9 +46,9 @@ public class Session {
 
     private Connection createConnection() throws ExecException {
         String db = ConnectionOptionsManager.getGlobalOptions().getDbName();
-        // Normalize connOptions so the connector can append it directly to the url.
-        String options = (connOptions != null && !connOptions.isEmpty()) ? "&" + connOptions : "";
-        String url = connector_.buildJdbcUrl(endpoint_, db, options);
+        // Pass a raw options fragment. Each connector owns its JDBC URL syntax
+        // and decides whether the fragment needs '?' or '&'.
+        String url = connector_.buildJdbcUrl(endpoint_, db, connOptions);
         LOGGER.trace("[" + sessionId_ + "] jdbc url: " + url);
 
         try {
