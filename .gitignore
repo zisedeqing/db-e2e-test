@@ -1,0 +1,20 @@
+# Maven build output
+target/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Test runtime output directories (generated when running test suites)
+output/
+origin/
+diff/
