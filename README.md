@@ -62,9 +62,10 @@ $var_name=var_value
 !hdfs dfs -put ./test /usr/tmp/;
 ```
 对于shell脚本,可以使用的环境变量:
-1. impalad进程启动时配置的环境变量
-2. 实现的固定的环境变量
-  IMPALADS: impalad的信息,格式为: host:mysql_port:hs2_port:webserver_port
+1. 测试程序进程自身的系统环境变量
+2. 框架固定的环境变量
+  ENDPOINTS: 被测服务端点信息,格式为: host:port[:name=port...],多端点用逗号分隔。
+  附加端口按当前 connector 定义的顺序输出(默认 ImpalaConnector: hs2/webserver/http)
   WORK_DIR: 测试程序的工作路径
   其他的可以看代码:ConcurrencyTests.setEnvironment
 3. 用户自定义的环境变量
@@ -128,7 +129,7 @@ select 2;
 (session_id:node_id)
 ```
 session_id用小括号包裹, 以字母开头,可以包含下划线 数字和字母.
-node_id:数字，从0开始，表示session链接哪个impala node
+node_id:数字，从0开始，表示session连接到第几个endpoint（多个endpoint按 -i 参数传入顺序编号）
 2. sql
    可以匹配任意sql语句,不同之处是如果sql中包含分号';',则需要使用反斜杠进行转移.
    sql 必须以';'作为结束符.
@@ -254,9 +255,9 @@ statement hook主要是用于处理要执行的语句,比如语句中包含环�
 2. env_file 定义的环境变量
 3. 系统环境变量
 ### 2.6 connection options
-用于配置执行SQL时,连接到impala的连接参数.
-ConcurrencyTests使用JDBC连接impala,并且每个session维护一个独立的连接.
-每个连接时在session第一次执行SQL或者session 主动退出后第一次执行SQL时创建,在session活跃期间
+用于配置执行SQL时,连接到被测数据库的连接参数.
+ConcurrencyTests使用JDBC连接被测数据库,并且每个session维护一个独立的连接.
+每个连接是在session第一次执行SQL或者session 主动退出后第一次执行SQL时创建,在session活跃期间
 都会始终使用这个connection.因此连接参数只有在session创建connection时才有用.
 
 使用如下方式配置session的连接参数:
@@ -285,25 +286,59 @@ usage: ConcurrencyTests [-1] [-2] [-3] [-4 <arg>] [-D <arg>] [-d <arg>] [-e <arg
  -2,--debug                     enable log debug
  -3,--progress                  print progress for each script
  -4,--progress-interval <arg>   print progress interval, default is 10s
+ -c,--connector <arg>           connector config file; default read work-dir/connector.properties, then
+                                built-in ImpalaConnector
  -D,--database <arg>            database name
  -d,--work-dir <arg>            [Required] workspace directory
  -e,--env <arg>                 custom environment variables, format: name=value
  -E,--exit-on-failed            exit test if found any failed test case, default is false
  -h,--help                      print help info
- -i,--impalad <arg>             [Required] impalad info, format is host:mysql-port:hs2-port:webserver-port,...
+ -i,--endpoint <arg>            [Required] endpoint info, format is host:port[:name=port...],...
  -o,--jdbc-options <arg>        options of jdbc connect
  -p,--password <arg>            user password
  -S,--skip-on-error             skip error test case, default is false
+ -s,--skip-tests-file <arg>     skip tests listed in this file
  -t,--test-case <arg>           only run the given test case
  -u,--user <arg>                user name
  -f,--file-of-test <arg>        test case file, default is all files in the given directory
 ```
 示例:
 ```shell
-java -cp ./*:./concurrency-test-1.0-SNAPSHOT-jar-with-dependencies.jar  ConcurrencyTests \
-    -i 9.135.1.31:33060:25000,9.135.1.31:33061:25001\
-    -b ${IMPALA_HOME}/tests/concurrency-test
+java -jar concurrency-test-1.0-jar-with-dependencies.jar \
+    -i 9.135.1.31:33060:hs2=25000:webserver=25001,9.135.1.31:33061:hs2=25002 \
+    -d /path/to/test-workspace
 ```
 
-## 4.TODO
-1. 支持sql在指定的impalad上执行
+## 4. connector（连接器）
+框架与被测数据库解耦，通过 connector 适配不同产品。装配顺序:
+```
+--connector 指定的配置文件  ->  work-dir/connector.properties  ->  内置 ImpalaConnector(默认)
+```
+
+### 4.1 内置 ImpalaConnector
+默认零配置即为 Impala / TChouse-X 模式，driver、端口模型(hs2/webserver/http)、JDBC URL 模板、
+TIMESTAMP 微秒渲染等方言行为都内聚在 `framework.connection.ImpalaConnector` 中。
+
+### 4.2 接入新的数据库产品
+**方式一：配置文件（零改码）** —— 新建 properties，通过 `-c` 或 work-dir 下 `connector.properties` 生效:
+```properties
+connector.driver=org.postgresql.Driver
+connector.url=jdbc:postgresql://{host}:{port}/{db}{options}
+# connector.extraPortNames 可选，逗号分隔
+```
+URL 模板支持占位符: `{host}` `{port}` `{db}` `{options}`。
+注意需要把对应产品的 JDBC 驱动加入 classpath。
+
+**方式二：自定义 DbConnector 实现** —— 实现 `framework.connection.DbConnector` 接口，
+把产品不变知识(driver、extraPortNames、URL 模板、列渲染方言)固化为类内常量，然后配置:
+```properties
+connector.impl=com.your.pkg.YourConnector
+```
+适合需要方言级定制（如 TIMESTAMP 精度渲染）的成熟产品。
+
+### 4.3 环境变量
+shell 命令中可通过 `${ENDPOINTS}` 获取端点列表，格式与 `-i` 一致:
+`host:port[:name=port...]`，多端点逗号分隔。
+
+## 5.TODO
+1. 支持sql在指定的endpoint上执行

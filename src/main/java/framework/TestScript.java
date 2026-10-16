@@ -1,6 +1,8 @@
 package framework;
 
 import com.github.difflib.algorithm.DiffException;
+import framework.connection.DbConnector;
+import framework.connection.Endpoint;
 import framework.parser.ParserUtils;
 import framework.statement.CombineHookStatement;
 import framework.statement.EmptyStatement;
@@ -35,8 +37,12 @@ public class TestScript {
     public TestScript() {
     }
 
-    public void registerImpaladService(List<ImpaladService> impalads) {
-        sessionManager_.setImpalads(impalads);
+    public void registerEndpoints(List<Endpoint> endpoints) {
+        sessionManager_.setEndpoints(endpoints);
+    }
+
+    public void setConnector(DbConnector connector) {
+        sessionManager_.setConnector(connector);
     }
 
     public void setEnvs(Map<String, String> envs) {
@@ -55,11 +61,11 @@ public class TestScript {
     }
 
     public TestCaseStatistic executeScript(String inputFile, String finalOutputFile, String originOutputFile) throws ExecException {
-        if (sessionManager_.getImpalads().isEmpty()) {
-            throw new ExecException("No impalads register, call registerImpaladService() to register impalad");
+        if (sessionManager_.getEndpoints().isEmpty()) {
+            throw new ExecException("No endpoints registered, call registerEndpoints() to register endpoints");
         }
         try {
-            Class.forName("com.mysql.cj.jdbc.Driver");
+            Class.forName(sessionManager_.getConnector().driverClass());
         } catch (ClassNotFoundException e) {
             throw new ExecException(e);
         }

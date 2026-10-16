@@ -1,6 +1,8 @@
 package framework;
 
 
+import framework.connection.DbConnector;
+import framework.connection.Endpoint;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -12,17 +14,26 @@ import java.util.Map;
 public class SessionManager {
   private static Logger LOGGER = LogManager.getLogger(SessionManager.class);
   private Map<String, Session> sessions_ = new HashMap<>();
-  private List<ImpaladService> impalads_ = new ArrayList<>();
+  private List<Endpoint> endpoints_ = new ArrayList<>();
+  private DbConnector connector_;
 
   public SessionManager() {
   }
 
-  public void setImpalads(List<ImpaladService> impalads) {
-    impalads_ = impalads;
+  public void setEndpoints(List<Endpoint> endpoints) {
+    endpoints_ = endpoints;
   }
 
-  public List<ImpaladService> getImpalads() {
-    return impalads_;
+  public List<Endpoint> getEndpoints() {
+    return endpoints_;
+  }
+
+  public void setConnector(DbConnector connector) {
+    connector_ = connector;
+  }
+
+  public DbConnector getConnector() {
+    return connector_;
   }
 
   public Session removeSession(String sessionId) {
@@ -34,7 +45,7 @@ public class SessionManager {
     Session session = getSession(sessionId);
     if (session == null) {
       session = new Session(sessionId, realNodeId,
-              impalads_.get(realNodeId), connOptions);
+              endpoints_.get(realNodeId), connector_, connOptions);
       sessions_.put(sessionId, session);
     }
     if (nodeId != null && session.getNodeId() != nodeId)

@@ -1,9 +1,11 @@
 import com.google.common.base.Joiner;
 import framework.ConnectionOptionsManager;
 import framework.ExecException;
-import framework.ImpaladService;
 import framework.TestCaseStatistic;
 import framework.TestScript;
+import framework.connection.ConnectorFactory;
+import framework.connection.DbConnector;
+import framework.connection.Endpoint;
 import org.apache.commons.cli.*;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
@@ -21,7 +23,7 @@ public class ConcurrencyTests {
     private static String RESULT_SUFFIX = "result";
     private static String DIFF_SUFFIX = "diff";
 
-    private static final String ENV_IMPALADS = "IMPALADS";
+    private static final String ENV_ENDPOINTS = "ENDPOINTS";
     private static final String ENV_WORK_DIR = "WORK_DIR";
     private static final String ENV_DATABASE = "DATABASE";
     private static final String ENV_USER = "USER";
@@ -37,6 +39,7 @@ public class ConcurrencyTests {
 
     private String globalHookFile;
     private String globalEnvFile;
+    private String connectorFile_;
 
     private String givenTestFile_;
     private List<String> givenTestCases_;
@@ -47,7 +50,8 @@ public class ConcurrencyTests {
 
     private List<String> customerEnvs_ = new ArrayList<>();
 
-    private List<ImpaladService> impalads_ = new ArrayList<>();
+    private List<Endpoint> endpoints_ = new ArrayList<>();
+    private DbConnector connector_;
 
     private boolean skipErrorScripts_ = false;
     private boolean exitFailedScripts_ = false;
@@ -62,8 +66,10 @@ public class ConcurrencyTests {
 
         options.addOption("h", "help", false, "print help info");
         // connect infos
-        options.addOption("i", "impalad", true,
-                "[Required] impalad info, format is host:mysql-port:hs2-port:webserver-port,...");
+        options.addOption("i", "endpoint", true,
+                "[Required] endpoint info, format is host:port[:name=port...],...");
+        options.addOption("c", "connector", true,
+                "connector config file; default read work-dir/connector.properties, then built-in ImpalaConnector");
         options.addOption("D", "database", true, "database name");
         options.addOption("u", "user", true, "user name");
         options.addOption("p", "password", true, "user password");
@@ -93,16 +99,13 @@ public class ConcurrencyTests {
                 System.exit(0);
             }
             if (commandLine.hasOption("i")) {
-                String impalads = commandLine.getOptionValue("i");
-                for (String impalad : impalads.split(",")) {
-                    String[] es = impalad.split(":");
-                    if (es.length != 5)
-                        throw new Exception("invalid format of \"impalad\" option");
-                    impalads_.add(new ImpaladService(es[0],
-                            Integer.valueOf(es[1]), Integer.valueOf(es[2]), Integer.valueOf(es[3]),
-                            Integer.valueOf(es[4])));
+                String endpoints = commandLine.getOptionValue("i");
+                for (String endpoint : endpoints.split(",")) {
+                    endpoints_.add(parseEndpoint(endpoint));
                 }
             }
+            if (commandLine.hasOption("c"))
+                connectorFile_ = commandLine.getOptionValue("c");
             if (commandLine.hasOption("D"))
                 ConnectionOptionsManager.getGlobalOptions().setDbName(commandLine.getOptionValue("D"));
             if (commandLine.hasOption("u"))
@@ -147,7 +150,7 @@ public class ConcurrencyTests {
             if (commandLine.hasOption("progress-interval"))
                 printProgressInterval = Integer.valueOf(commandLine.getOptionValue("progress-interval"));
 
-            if (impalads_.isEmpty()) {
+            if (endpoints_.isEmpty()) {
                 hf.printHelp(ConcurrencyTests.class.getName(), options, true);
                 System.exit(1);
             }
@@ -164,13 +167,18 @@ public class ConcurrencyTests {
             originResultBaseDir_ = baseDir_ + "/origin";
             globalHookFile = baseDir_ + "/hook_file";
             globalEnvFile = baseDir_ + "/env_file";
+            if (connectorFile_ == null)
+                connectorFile_ = baseDir_ + "/connector.properties";
         } catch (Exception e) {
             LOGGER.error("", e);
             hf.printHelp(ConcurrencyTests.class.getName(), options, true);
             System.exit(1);
         }
 
-        LOGGER.info("impalas: " + Joiner.on(",").join(impalads_));
+        connector_ = loadConnector();
+        validateEndpoints();
+
+        LOGGER.info("endpoints: " + Joiner.on(",").join(formatEndpoints()));
         LOGGER.info("workspace dir: " + baseDir_);
         return this;
     }
@@ -395,15 +403,9 @@ public class ConcurrencyTests {
         Map<String, String> defaultEnvs = new HashMap<>(System.getenv());
         loadGlobalEnvFile(defaultEnvs);
 
-        StringBuilder stringBuilder = new StringBuilder();
-        int i = 0;
-        for (ImpaladService impala : impalads_) {
-            if (i++ > 0)
-                stringBuilder.append(",");
-            stringBuilder.append(impala.format());
-        }
-
-        defaultEnvs.put(ENV_IMPALADS, stringBuilder.toString());
+        // Expose endpoints to shell scripts in the stable order defined by the
+        // connector's extraPortNames(), e.g. host:port:hs2=25000:webserver=25001.
+        defaultEnvs.put(ENV_ENDPOINTS, Joiner.on(",").join(formatEndpoints()));
         defaultEnvs.put(ENV_WORK_DIR, baseDir_);
         defaultEnvs.put(ENV_DATABASE, ConnectionOptionsManager.getGlobalOptions().getDbName());
         defaultEnvs.put(ENV_USER, ConnectionOptionsManager.getGlobalOptions().getUserName());
@@ -446,13 +448,98 @@ public class ConcurrencyTests {
 
     private TestScript createScriptExecutor() throws ExecException {
         TestScript executor = new TestScript();
-        executor.registerImpaladService(impalads_);
+        executor.registerEndpoints(endpoints_);
+        executor.setConnector(connector_);
         executor.setEnvs(setEnvironment());
 
         File hookFile = new File(globalHookFile);
         if (!hookFile.exists() || hookFile.isDirectory()) return executor;
         executor.addGlobalHooks(globalHookFile);
         return executor;
+    }
+
+    // Parse one endpoint spec: host:port or host:port:name=port[:name=port...]
+    private Endpoint parseEndpoint(String spec) throws Exception {
+        String[] parts = spec.split(":");
+        if (parts.length < 2)
+            throw new Exception("invalid endpoint format: " + spec);
+        String host = parts[0];
+        int port;
+        try {
+            port = Integer.valueOf(parts[1]);
+        } catch (NumberFormatException e) {
+            throw new Exception("invalid endpoint port: " + spec);
+        }
+
+        Map<String, Integer> extra = new LinkedHashMap<>();
+        for (int i = 2; i < parts.length; i++) {
+            String[] kv = parts[i].split("=");
+            if (kv.length != 2)
+                throw new Exception("invalid extra port segment: " + parts[i]);
+            try {
+                extra.put(kv[0], Integer.valueOf(kv[1]));
+            } catch (NumberFormatException e) {
+                throw new Exception("invalid extra port value: " + parts[i]);
+            }
+        }
+        return new Endpoint(host, port, extra, null);
+    }
+
+    // Assemble the connector: --connector file > work-dir/connector.properties >
+    // built-in default (ImpalaConnector).
+    private DbConnector loadConnector() {
+        File file = new File(connectorFile_);
+        if (!file.exists() || file.isDirectory()) {
+            LOGGER.info("connector config not found: " + connectorFile_
+                    + ", fall back to built-in default connector: "
+                    + ConnectorFactory.DEFAULT.getClass().getName());
+            return ConnectorFactory.createDefault();
+        }
+
+        Map<String, String> props = new LinkedHashMap<>();
+        try (InputStream input = new FileInputStream(file)) {
+            Properties prop = new Properties();
+            prop.load(input);
+            for (Map.Entry<Object, Object> entry : prop.entrySet()) {
+                props.put((String) entry.getKey(), (String) entry.getValue());
+            }
+        } catch (IOException e) {
+            throw new IllegalArgumentException("cannot load connector config: " + connectorFile_, e);
+        }
+        DbConnector connector = ConnectorFactory.create(props);
+        LOGGER.info("connector: " + connector.getClass().getName());
+        return connector;
+    }
+
+    // Warn if an endpoint carries extra ports unknown to the connector, so
+    // typos surface early instead of silently missing port info.
+    private void validateEndpoints() {
+        List<String> known = connector_.extraPortNames();
+        for (Endpoint endpoint : endpoints_) {
+            for (String name : endpoint.getExtraPorts().keySet()) {
+                if (!known.contains(name))
+                    LOGGER.warn("endpoint " + endpoint.getHost() + " has unknown extra port name '"
+                            + name + "', known names: " + known);
+            }
+        }
+    }
+
+    // Format endpoints with extra ports ordered by the connector's extraPortNames(),
+    // e.g. host:port:hs2=25000:webserver=25001.
+    private List<String> formatEndpoints() {
+        List<String> known = connector_.extraPortNames();
+        List<String> formatted = new ArrayList<>();
+        for (Endpoint endpoint : endpoints_) {
+            StringBuilder sb = new StringBuilder(endpoint.getHost())
+                    .append(":").append(endpoint.getPort());
+            for (String name : known) {
+                Integer port = endpoint.getExtraPort(name);
+                if (port != null)
+                    sb.append(":").append(name).append("=").append(port);
+            }
+            formatted.add(sb.toString());
+        }
+        return formatted;
     }
 
     private void startProgress(TestScript executor, String prefix) throws InterruptedException {

@@ -6,12 +6,12 @@
 
     <!-- Standalone project: no longer inherits from org.apache.impala:impala-parent. -->
     <groupId>com.tencent.cdw.testkit</groupId>
-    <artifactId>concurrency-test</artifactId>
+    <artifactId>db-e2e-test</artifactId>
     <version>1.0</version>
     <packaging>jar</packaging>
 
-    <name>concurrency-test</name>
-    <description>SQL end-to-end concurrency test framework (standalone)</description>
+    <name>db-e2e-test</name>
+    <description>SQL end-to-end concurrency test framework (standalone, product-neutral)</description>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -44,11 +44,13 @@
             <artifactId>antlr4-runtime</artifactId>
             <version>${antlr.version}</version>
         </dependency>
-        <!-- https://mvnrepository.com/artifact/mysql/mysql-connector-java -->
+        <!-- JDBC driver of the built-in ImpalaConnector; loaded reflectively at
+             runtime. Other products should bring their own driver to the classpath. -->
         <dependency>
             <groupId>mysql</groupId>
             <artifactId>mysql-connector-java</artifactId>
             <version>${mysql.connector.version}</version>
+            <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>org.jetbrains</groupId>
@@ -84,7 +86,7 @@
     </dependencies>
 
     <build>
-        <finalName>concurrency-test-${project.version}</finalName>
+        <finalName>db-e2e-test-${project.version}</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
