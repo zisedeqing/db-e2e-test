@@ -1,4 +1,4 @@
-package framework.connection;
+package framework.connection.tchousexconnector;
 
 import org.junit.Test;
 
@@ -11,7 +11,7 @@ import java.sql.Types;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 
-public class ImpalaConnectorTest {
+public class TchousexConnectorTest {
 
     @Test
     public void shouldRenderTimestampWithMicrosecondPrecision() throws Exception {
@@ -20,7 +20,7 @@ public class ImpalaConnectorTest {
         ResultSet resultSet = resultSetReturning(timestamp);
         ResultSetMetaData metadata = metadataReturning(Types.TIMESTAMP);
 
-        String rendered = new ImpalaConnector().renderColumn(resultSet, metadata, 1);
+        String rendered = new TchousexConnector().renderColumn(resultSet, metadata, 1);
 
         assertEquals("2026-10-16 12:34:56.123456", rendered);
     }
@@ -30,7 +30,7 @@ public class ImpalaConnectorTest {
         ResultSet resultSet = resultSetReturning(null);
         ResultSetMetaData metadata = metadataReturning(Types.TIMESTAMP);
 
-        assertNull(new ImpalaConnector().renderColumn(resultSet, metadata, 1));
+        assertNull(new TchousexConnector().renderColumn(resultSet, metadata, 1));
     }
 
     private ResultSet resultSetReturning(Timestamp timestamp) {

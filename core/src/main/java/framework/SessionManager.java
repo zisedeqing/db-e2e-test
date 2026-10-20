@@ -44,6 +44,9 @@ public class SessionManager {
     int realNodeId = nodeId == null ? 0 : nodeId;
     Session session = getSession(sessionId);
     if (session == null) {
+      if (realNodeId < 0 || realNodeId >= endpoints_.size())
+        throw new ExecException("Endpoint index " + realNodeId + " is out of range [0, "
+                + (endpoints_.size() - 1) + "] for session: " + sessionId);
       session = new Session(sessionId, realNodeId,
               endpoints_.get(realNodeId), connector_, connOptions);
       sessions_.put(sessionId, session);

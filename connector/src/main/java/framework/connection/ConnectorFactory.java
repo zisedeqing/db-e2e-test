@@ -1,12 +1,14 @@
 package framework.connection;
 
+import framework.connection.tchousexconnector.TchousexConnector;
+
 import java.util.Map;
 
 // Assembles a DbConnector from configuration, falling back to the built-in default.
 public class ConnectorFactory {
 
     // Built-in default connector when no config is provided.
-    public static final DbConnector DEFAULT = new ImpalaConnector();
+    public static final DbConnector DEFAULT = new TchousexConnector();
 
     // No connector.properties found at all -> use the built-in default.
     public static DbConnector createDefault() {
@@ -16,7 +18,7 @@ public class ConnectorFactory {
     // Build connector from parsed connector.properties.
     public static DbConnector create(Map<String, String> props) {
         if (props == null || props.isEmpty()) {
-            return DEFAULT;                      // zero-config -> built-in ImpalaConnector
+            return DEFAULT;                      // zero-config -> built-in TchousexConnector
         }
 
         String impl = props.get("connector.impl");

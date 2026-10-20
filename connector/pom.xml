@@ -16,7 +16,7 @@
     <description>Database connector SPI and built-in connector implementations</description>
 
     <dependencies>
-        <!-- Runtime driver for the built-in ImpalaConnector. -->
+        <!-- Runtime driver for the built-in TchousexConnector. -->
         <dependency>
             <groupId>mysql</groupId>
             <artifactId>mysql-connector-java</artifactId>

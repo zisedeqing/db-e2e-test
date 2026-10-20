@@ -49,14 +49,20 @@ public class Session {
         // Pass a raw options fragment. Each connector owns its JDBC URL syntax
         // and decides whether the fragment needs '?' or '&'.
         String url = connector_.buildJdbcUrl(endpoint_, db, connOptions);
-        LOGGER.trace("[" + sessionId_ + "] jdbc url: " + url);
+        String safeUrl = sanitizeJdbcUrl(url);
+        LOGGER.trace("[" + sessionId_ + "] jdbc url: " + safeUrl);
 
         try {
             return DriverManager.getConnection(url);
         } catch (SQLException e) {
-            LOGGER.error("Get jdbc connection  " + url);
+            LOGGER.error("Get jdbc connection " + safeUrl);
             throw new ExecException(e);
         }
+    }
+
+    static String sanitizeJdbcUrl(String url) {
+        if (url == null) return null;
+        return url.replaceAll("(?i)([?&](?:password|pwd)=)[^&]*", "$1***");
     }
 
     public ExecutorThread getExecutorThread() {

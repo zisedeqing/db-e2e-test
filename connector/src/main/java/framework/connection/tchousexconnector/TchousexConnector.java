@@ -1,4 +1,8 @@
-package framework.connection;
+package framework.connection.tchousexconnector;
+
+import framework.connection.DbConnector;
+import framework.connection.Endpoint;
+import framework.connection.JdbcUrls;
 
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -9,9 +13,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
 
-// Impala-compatible connector. All product-invariant knowledge (driver, port model,
-// url template, timestamp dialect) is encapsulated here; no external config needed.
-public class ImpalaConnector implements DbConnector {
+// TCHouse-X connector. All product-invariant knowledge (driver, port model,
+// URL template, and timestamp dialect) is encapsulated here.
+public class TchousexConnector implements DbConnector {
 
     // Product-invariant constants.
     private static final String DRIVER = "com.mysql.cj.jdbc.Driver";
@@ -35,7 +39,7 @@ public class ImpalaConnector implements DbConnector {
         return EXTRA_PORT_NAMES;
     }
 
-    // Impala-compatible timestamp nanosecond rendering (was Session.handleTimestampColumn).
+    // TCHouse-X timestamp rendering keeps up to six fractional-second digits.
     @Override
     public String renderColumn(ResultSet rs, ResultSetMetaData md, int i) throws SQLException {
         int colType = md.getColumnType(i);

@@ -3,6 +3,9 @@ package framework;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+// Holds the global connection settings loaded from connector.properties and a
+// one-shot JDBC option override parsed from `-- connection_options:` comments.
+// The override is consumed by the next parsed SQL statement.
 public class ConnectionOptionsManager {
   private static Logger LOGGER = LogManager.getLogger(ConnectionOptionsManager.class);
   private static String IDENTIFIER = "-- connection_options";
@@ -11,6 +14,12 @@ public class ConnectionOptionsManager {
 
   public static ConnectionOptions getGlobalOptions() {
     return globalOptions;
+  }
+
+  public static void setGlobalOptions(ConnectionOptions options) {
+    if (options == null)
+      throw new IllegalArgumentException("global connection options must not be null");
+    globalOptions = options;
   }
 
   public static boolean isConnectionOptions(String comment) {

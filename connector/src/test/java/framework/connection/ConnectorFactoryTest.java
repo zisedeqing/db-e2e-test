@@ -1,5 +1,6 @@
 package framework.connection;
 
+import framework.connection.tchousexconnector.TchousexConnector;
 import org.junit.Test;
 
 import java.util.Collections;
@@ -13,20 +14,21 @@ import static org.junit.Assert.assertTrue;
 public class ConnectorFactoryTest {
 
     @Test
-    public void shouldUseBuiltInImpalaConnectorByDefault() {
+    public void shouldUseBuiltInTchousexConnectorByDefault() {
         assertSame(ConnectorFactory.DEFAULT, ConnectorFactory.createDefault());
+        assertSame(ConnectorFactory.DEFAULT, ConnectorFactory.create(null));
         assertSame(ConnectorFactory.DEFAULT, ConnectorFactory.create(Collections.emptyMap()));
-        assertTrue(ConnectorFactory.DEFAULT instanceof ImpalaConnector);
+        assertTrue(ConnectorFactory.DEFAULT instanceof TchousexConnector);
     }
 
     @Test
     public void shouldInstantiateConfiguredConnectorImplementation() {
         Map<String, String> props = Collections.singletonMap(
-                "connector.impl", ImpalaConnector.class.getName());
+                "connector.impl", TchousexConnector.class.getName());
 
         DbConnector connector = ConnectorFactory.create(props);
 
-        assertTrue(connector instanceof ImpalaConnector);
+        assertTrue(connector instanceof TchousexConnector);
     }
 
     @Test
@@ -41,15 +43,32 @@ public class ConnectorFactoryTest {
         assertEquals("org.example.Driver", connector.driverClass());
     }
 
-    @Test(expected = IllegalArgumentException.class)
-    public void shouldRejectUnknownConnectorImplementation() {
-        ConnectorFactory.create(Collections.singletonMap(
-                "connector.impl", "not.existing.Connector"));
+    @Test
+    public void shouldTreatBlankImplementationAsGenericConfiguration() {
+        Map<String, String> props = new LinkedHashMap<>();
+        props.put("connector.impl", "  ");
+        props.put("connector.driver", "org.example.Driver");
+        props.put("connector.url", "jdbc:example://{host}:{port}/{db}{options}");
+
+        assertTrue(ConnectorFactory.create(props) instanceof GenericJdbcConnector);
     }
 
     @Test
-    public void shouldKeepImpalaProductKnowledgeInsideImplementation() {
-        ImpalaConnector connector = new ImpalaConnector();
+    public void shouldExplainUnknownConnectorImplementation() {
+        try {
+            ConnectorFactory.create(Collections.singletonMap(
+                    "connector.impl", "not.existing.Connector"));
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("cannot instantiate connector.impl"));
+            assertTrue(e.getCause() instanceof ClassNotFoundException);
+            return;
+        }
+        throw new AssertionError("Expected unknown connector implementation to fail");
+    }
+
+    @Test
+    public void shouldKeepTchousexProductKnowledgeInsideImplementation() {
+        TchousexConnector connector = new TchousexConnector();
         Endpoint endpoint = new Endpoint("db.host", 33060, null, null);
 
         assertEquals("com.mysql.cj.jdbc.Driver", connector.driverClass());

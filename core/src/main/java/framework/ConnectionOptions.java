@@ -5,8 +5,8 @@ import java.net.URLEncoder;
 
 public class ConnectionOptions {
     private String dbName_ = "default";
-    private String userName_ = "";
-    private String password_ = "";
+    private String userName_ = null;
+    private String password_ = null;
 
     private String jdbcOptions_ = null;
 
@@ -29,19 +29,37 @@ public class ConnectionOptions {
 
     public String getJdbcOptions() {
         StringBuilder builder = new StringBuilder();
-        if (userName_ != null) {
-            builder.append("&user=").append(userName_);
+        appendOption(builder, "user", encode(userName_));
+        appendOption(builder, "password", encode(password_));
+        if (jdbcOptions_ != null && !jdbcOptions_.isEmpty()) {
+            if (builder.length() > 0) builder.append("&");
+            builder.append(trimOptionPrefix(jdbcOptions_));
         }
-        if (password_ != null) {
-            try{
-                builder.append("&password=").append(URLEncoder.encode(password_, "UTF-8")).append("");
-            } catch (UnsupportedEncodingException e) {
-                throw new RuntimeException(e);
-            }
-        }
-        if (jdbcOptions_ != null)
-            builder.append("&").append(jdbcOptions_);
         return builder.toString();
+    }
+
+    private String encode(String value) {
+        if (value == null) return null;
+        try {
+            return URLEncoder.encode(value, "UTF-8");
+        } catch (UnsupportedEncodingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void appendOption(StringBuilder builder, String name, String value) {
+        if (value == null) return;
+        if (builder.length() > 0) builder.append("&");
+        builder.append(name).append("=").append(value);
+    }
+
+    private String trimOptionPrefix(String value) {
+        int start = 0;
+        while (start < value.length()
+                && (value.charAt(start) == '?' || value.charAt(start) == '&')) {
+            start++;
+        }
+        return value.substring(start);
     }
 
     public String getDbName() {

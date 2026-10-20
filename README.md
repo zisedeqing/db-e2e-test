@@ -1,12 +1,12 @@
 # db-e2e-test
 
-`db-e2e-test` 是一个基于 Java 和 JDBC 的 SQL 端到端并发测试框架。核心执行引擎与数据库产品无关，通过可插拔 connector 适配不同数据库；默认内置 `ImpalaConnector`。
+`db-e2e-test` 是一个基于 Java 和 JDBC 的 SQL 端到端并发测试框架。核心执行引擎与数据库产品无关，通过可插拔 connector 适配不同数据库；默认内置 `TchousexConnector`。
 
 ## 0. 构建与模块
 
 项目是独立的 Maven 多模块工程：
 
-- `connector`：`Endpoint`、`DbConnector` SPI、`ConnectorFactory`、通用 JDBC connector 与内置 Impala connector；
+- `connector`：`Endpoint`、`DbConnector` SPI、`ConnectorFactory`、通用 JDBC connector 与内置 TCHouse-X connector；
 - `core`：脚本解析、hook、并发 session、结果 diff、CLI 与可执行 fat jar。
 
 构建：
@@ -94,7 +94,7 @@ $var_name=var_value
 1. 测试程序进程自身的系统环境变量
 2. 框架固定的环境变量
   ENDPOINTS: 被测服务端点信息,格式为: host:port[:name=port...],多端点用逗号分隔。
-  附加端口按当前 connector 定义的顺序输出(默认 ImpalaConnector: hs2/webserver/http)
+  附加端口按当前 connector 定义的顺序输出(默认 TchousexConnector: hs2/webserver/http)
   WORK_DIR: 测试程序的工作路径
   其他的可以看代码:ConcurrencyTests.setEnvironment
 3. 用户自定义的环境变量
@@ -158,7 +158,7 @@ select 2;
 (session_id:node_id)
 ```
 session_id用小括号包裹, 以字母开头,可以包含下划线 数字和字母.
-node_id:数字，从0开始，表示session连接到第几个endpoint（多个endpoint按 -i 参数传入顺序编号）
+node_id:数字，从0开始，表示session连接到第几个endpoint（按 connector 配置中 connection.endpoints 的顺序编号）
 2. sql
    可以匹配任意sql语句,不同之处是如果sql中包含分号';',则需要使用反斜杠进行转移.
    sql 必须以';'作为结束符.
@@ -309,73 +309,110 @@ s1和s3都使用默认的配置参数.
 
 ## 3. ConcurrencyTests
 ```text
-usage: ConcurrencyTests [-1] [-2] [-3] [-4 <arg>] [-D <arg>] [-d <arg>] [-e <arg>] [-E] [-h] [-i <arg>] [-o
-       <arg>] [-p <arg>] [-S] [-t <arg>] [-u <arg>]
+usage: ConcurrencyTests [-1] [-2] [-3] [-4 <arg>] [-c <arg>] [-d <arg>] [-e <arg>] [-E] [-f <arg>]
+       [-h] [-S] [-s <arg>] [-t <arg>]
  -1,--trace                     enable log trace
  -2,--debug                     enable log debug
  -3,--progress                  print progress for each script
  -4,--progress-interval <arg>   print progress interval, default is 10s
- -c,--connector <arg>           connector config file; default read work-dir/connector.properties, then
-                                built-in ImpalaConnector
- -D,--database <arg>            database name
+ -c,--connector <arg>           connector config file; default is work-dir/connector.properties
  -d,--work-dir <arg>            [Required] workspace directory
  -e,--env <arg>                 custom environment variables, format: name=value
  -E,--exit-on-failed            exit test if found any failed test case, default is false
+ -f,--file-of-test <arg>        test case file, default is all files in the given directory
  -h,--help                      print help info
- -i,--endpoint <arg>            [Required] endpoint info, format is host:port[:name=port...],...
- -o,--jdbc-options <arg>        options of jdbc connect
- -p,--password <arg>            user password
  -S,--skip-on-error             skip error test case, default is false
  -s,--skip-tests-file <arg>     skip tests listed in this file
  -t,--test-case <arg>           only run the given test case
- -u,--user <arg>                user name
- -f,--file-of-test <arg>        test case file, default is all files in the given directory
 ```
-示例:
+
+数据库连接参数不再通过 CLI 传入，全部由 connector 配置文件管理。运行示例：
+
 ```shell
-java -jar concurrency-test-1.0-jar-with-dependencies.jar \
-    -i 9.135.1.31:33060:hs2=25000:webserver=25001,9.135.1.31:33061:hs2=25002 \
+java -jar core/target/db-e2e-test-1.0-jar-with-dependencies.jar \
     -d /path/to/test-workspace
 ```
 
-## 4. connector（连接器）
-框架与被测数据库解耦，通过 connector 适配不同产品。装配顺序:
-```
---connector 指定的配置文件  ->  work-dir/connector.properties  ->  内置 ImpalaConnector(默认)
+若配置文件不在 `<work-dir>/connector.properties`：
+
+```shell
+java -jar core/target/db-e2e-test-1.0-jar-with-dependencies.jar \
+    -d /path/to/test-workspace \
+    -c /path/to/tchousex.properties
 ```
 
-### 4.1 内置 ImpalaConnector
-默认零配置即为 Impala 兼容模式，driver、端口模型(hs2/webserver/http)、JDBC URL 模板、
-TIMESTAMP 微秒渲染等方言行为都内聚在 `framework.connection.ImpalaConnector` 中。
+## 4. connector（连接器）
+框架通过 connector 适配不同数据库。配置文件选择顺序：
+
+```text
+--connector 指定文件 -> work-dir/connector.properties
+```
+
+配置文件必须存在，并至少提供 connector 实现/通用 JDBC 信息及 `connection.endpoints`。
+
+### 4.1 TchousexConnector
+TCHouse-X 的 driver、端口模型（hs2/webserver/http）、JDBC URL 模板和 TIMESTAMP 渲染规则内聚在：
+
+```text
+framework.connection.tchousexconnector.TchousexConnector
+```
+
+完整配置模板位于 `connector/src/main/resources/connectors/tchousex.properties`，包含所有连接参数及说明：
+
+```properties
+connector.impl=framework.connection.tchousexconnector.TchousexConnector
+connection.endpoints=127.0.0.1:33060:hs2=25000:webserver=25010:http=28000
+connection.database=default
+connection.user=
+connection.password=
+connection.jdbcOptions=
+```
+
+复制模板：
+
+```shell
+cp connector/src/main/resources/connectors/tchousex.properties \
+   /path/to/test-workspace/connector.properties
+```
+
+> 升级说明：CLI 参数 `-i/-D/-u/-p/-o` 已移除；请分别迁移到
+> `connection.endpoints/database/user/password/jdbcOptions`。旧的
+> `framework.connection.ImpalaConnector` 类名也需替换为新的 TchousexConnector 全限定名。
 
 ### 4.2 接入新的数据库产品
-**方式一：配置文件（零改码）** —— 新建 properties，通过 `-c` 或 work-dir 下 `connector.properties` 生效:
+**方式一：配置文件（零改码）**：
+
 ```properties
 connector.driver=org.postgresql.Driver
 connector.url=jdbc:postgresql://{host}:{port}/{db}{options}
-# connector.extraPortNames 可选，逗号分隔
+connector.extraPortNames=
+connection.endpoints=127.0.0.1:5432
+connection.database=postgres
+connection.user=test_user
+connection.password=test_password
+connection.jdbcOptions=ssl=false
 ```
-URL 模板支持占位符: `{host}` `{port}` `{db}` `{options}`。
 
-非内置产品需要把对应 JDBC 驱动加入 classpath。由于 `java -jar` 会忽略额外的 `-cp`，请改用主类方式启动：
+URL 模板支持 `{host}`、`{port}`、`{db}`、`{options}` 占位符。
+
+非内置产品需要把 JDBC 驱动加入 classpath。由于 `java -jar` 会忽略额外 `-cp`，请使用主类方式：
 
 ```shell
 java -cp "core/target/db-e2e-test-1.0-jar-with-dependencies.jar:/path/to/product-jdbc-driver.jar" \
-    ConcurrencyTests -i host:port -d /path/to/test-workspace -c /path/to/connector.properties
+    ConcurrencyTests -d /path/to/test-workspace -c /path/to/connector.properties
 ```
 
-Windows 下 classpath 分隔符使用分号 `;`。也可以在构建时把产品 JDBC 驱动声明为 runtime 依赖，重新生成包含该驱动的 fat jar。
+Windows 下 classpath 分隔符使用分号 `;`。
 
-**方式二：自定义 DbConnector 实现** —— 实现 `framework.connection.DbConnector` 接口，
-把产品不变知识(driver、extraPortNames、URL 模板、列渲染方言)固化为类内常量，然后配置:
+**方式二：自定义 DbConnector 实现**：实现 `framework.connection.DbConnector`，并在配置中指定：
+
 ```properties
 connector.impl=com.your.pkg.YourConnector
 ```
-适合需要方言级定制（如 TIMESTAMP 精度渲染）的成熟产品。
 
 ### 4.3 环境变量
-shell 命令中可通过 `${ENDPOINTS}` 获取端点列表，格式与 `-i` 一致:
-`host:port[:name=port...]`，多端点逗号分隔。
+shell 命令可通过 `${ENDPOINTS}` 获取 `connection.endpoints` 的规范化结果；
+`${DATABASE}`、`${USER}`、`${PASSWORD}` 分别来自 connector 配置中的同名连接参数。
 
 ## 5.TODO
 1. 支持sql在指定的endpoint上执行
